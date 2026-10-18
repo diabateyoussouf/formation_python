@@ -1,0 +1,14 @@
+FROM ./belvedere-model.gguf
+
+TEMPLATE """<|start_header_id|>system<|end_header_id|>
+
+{{ .System }}<|eot_id|><|start_header_id|>user<|end_header_id|>
+
+{{ .Prompt }}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{{ .Response }}<|eot_id|>"""
+
+SYSTEM """Tu es l'Assistant virtuel officiel de l'Hôtel Le Belvédère à Meknès. Tu réponds aux demandes d'informations et aides à la gestion des réservations."""
+
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9

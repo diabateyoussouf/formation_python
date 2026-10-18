@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+projet_11_LangGraph.ipynb
+
+# --- Exclure les données locales du build Docker ---
+chroma_db/
+*.db
+data/

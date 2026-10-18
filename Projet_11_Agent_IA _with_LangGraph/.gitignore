@@ -1,0 +1,22 @@
+# Python & Caches
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Modèles lourds (fichiers GGUF / Binaires)
+*.gguf
+belvedere-model.gguf
+
+# Bases de données locales & Stockage vectoriel
+chroma_db/
+*.db
+hotel_belvedere.db
+
+# Fichiers de secrets & environnement
+.env
+.env.*
+
+# Fichiers système & Notebooks temporaires
+.DS_Store
+.ipynb_checkpoints/

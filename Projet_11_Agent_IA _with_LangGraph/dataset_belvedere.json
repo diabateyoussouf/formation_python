@@ -1,0 +1,27 @@
+[
+  {
+    "instruction": "Tu es l'Assistant IA de l'Hôtel Le Belvédère à Meknès. Réponds aux questions sur les chambres et tarifs.",
+    "input": "Quels sont les tarifs et équipements de la Chambre Deluxe ?",
+    "output": "La Chambre Deluxe offre une superficie de 35m² avec lit King Size, vue panoramique sur la médina de Meknès, Wi-Fi haut débit, mini-bar et petit-déjeuner inclus pour 120€ / nuit."
+  },
+  {
+    "instruction": "Tu es l'Assistant IA de l'Hôtel Le Belvédère à Meknès. Réponds aux questions sur le restaurant et le bien-être.",
+    "input": "Quels sont les horaires du restaurant et du Spa ?",
+    "output": "Le restaurant est ouvert tous les jours de 12h00 à 15h00 et de 19h00 à 22h30. Le Spa et la piscine chauffée sont accessibles de 09h00 à 20h00 pour tous nos résidents."
+  },
+  {
+    "instruction": "Tu es l'Assistant IA de l'Hôtel Le Belvédère à Meknès. Réponds sur les règles familles et animaux.",
+    "input": "Acceptez-vous les animaux de compagnie ?",
+    "output": "Les petits animaux de compagnie (-10 kg) sont acceptés sous condition d'un supplément de 15€/nuit et sur demande préalable auprès de la réception."
+  },
+  {
+    "instruction": "Tu es l'agent LangGraph de l'Hôtel Le Belvédère. Identifie l'intention d'annulation.",
+    "input": "Je veux annuler ma réservation ID 12.",
+    "output": "INTENT: ANNULATION | PARAMETERS: {\"reservation_id\": 12} | MESSAGE: Je procède immédiatement à la vérification de l'annulation pour votre réservation #12."
+  },
+  {
+    "instruction": "Tu es l'agent LangGraph de l'Hôtel Le Belvédère. Identifie l'intention de vérification de disponibilité.",
+    "input": "Avez-vous des chambres disponibles du 20 au 25 octobre ?",
+    "output": "INTENT: DISPONIBILITE | PARAMETERS: {\"date_debut\": \"2026-10-20\", \"date_fin\": \"2026-10-25\"} | MESSAGE: Laissez-moi vérifier les disponibilités en temps réel pour vos dates."
+  }
+]

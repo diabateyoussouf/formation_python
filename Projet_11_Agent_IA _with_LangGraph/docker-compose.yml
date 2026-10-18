@@ -1,0 +1,35 @@
+services:
+  # --- BACKEND FASTAPI ---
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: belvedere_backend
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env
+    environment:
+      - JWT_SECRET_KEY={JWT_SECRET_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+    volumes:
+      - ./hotel_belvedere.db:/app/hotel_belvedere.db
+      - ./chroma_db:/app/chroma_db
+      - ./data:/app/data
+    restart: always
+
+  # --- FRONTEND STREAMLIT ---
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: belvedere_frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8005/api/v1
+    volumes:
+      - .:/app
+    depends_on:
+      - backend
+    restart: always
