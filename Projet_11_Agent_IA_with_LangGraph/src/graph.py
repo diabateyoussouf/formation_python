@@ -1,6 +1,7 @@
 import os
 import re
 from typing import Literal
+import streamlit as st
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -25,14 +26,19 @@ from .tools import (
 # 1. Initialisation du modèle Mistral
 # ============================================================
 
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
+# ============================================================
+# 1. Initialisation du modèle Mistral
+# ============================================================
+
+# Récupère la clé depuis les variables d'environnement OU les secrets Streamlit
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY") or st.secrets.get("MISTRAL_API_KEY")
 
 llm = ChatMistralAI(
     model="ministral-8b-2512",
     api_key=MISTRAL_API_KEY,
     temperature=0.0
 )
-
 # ============================================================
 # 2. NŒUD : Routeur d'intentions LLM avec Mistral
 # ============================================================
