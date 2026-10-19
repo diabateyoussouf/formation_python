@@ -3,8 +3,45 @@ import streamlit as st
 # 1. Configuration de la page Streamlit (OBLIGATOIREMENT EN PREMIER)
 st.set_page_config(page_title="Hôtel Belvédère - Meknès", page_icon="🏨", layout="wide")
 
+import os
+import sys
+import time
+import subprocess
 import requests
 import extra_streamlit_components as stx
+
+# --- DÉMARRAGE INTELLIGENT DE FASTAPI (Docker vs Streamlit Cloud) ---
+@st.cache_resource
+def start_fastapi_backend():
+    """Démarre FastAPI en arrière-plan UNIQUEMENT si on n'est pas dans Docker Compose."""
+    api_base = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1")
+    
+    # Si 'backend' est dans l'URL, Docker Compose gère déjà le conteneur FastAPI séparé
+    if "backend" in api_base:
+        print("🐳 Environnement Docker Compose détecté : utilisation du conteneur 'backend'.")
+        return None
+
+    print("☁️ Environnement Streamlit Cloud / Standalone : Lancement de FastAPI en arrière-plan...")
+    process = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    )
+    
+    # Health check : attente active que l'API soit opérationnelle
+    for _ in range(15):
+        try:
+            res = requests.get("http://127.0.0.1:8000/docs", timeout=1)
+            if res.status_code == 200:
+                print("✅ FastAPI backend prêt sur 127.0.0.1:8000 !")
+                break
+        except Exception:
+            time.sleep(1)
+            
+    return process
+
+# Exécution unique du check/démarrage
+start_fastapi_backend()
+# ----------------------------------------------------------------------
+
 from config_frontend import API_AUTH_ME_URL
 
 # 2. GESTION DES COOKIES BROWSER (Persistance au F5)
