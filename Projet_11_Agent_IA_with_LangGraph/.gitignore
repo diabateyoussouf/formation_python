@@ -10,8 +10,8 @@ belvedere-model.gguf
 
 # Bases de données locales & Stockage vectoriel
 chroma_db/
-*.db
-hotel_belvedere.db
+#*.db
+#hotel_belvedere.db
 
 # Fichiers de secrets & environnement
 .env
