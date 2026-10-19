@@ -1,5 +1,3 @@
 [server]
 fileWatcherType = "none"
 headless = true
-MISTRAL_API_KEY = "mstrl_DcN7RcWNZJfBqJk0Av60PzQvfAFhUYRN_3keU38"
-JWT_SECRET_KEY = "5993ca9cca2919226ab2852c313f434ca9ad2311275f3d18accda0ea952683b8"
