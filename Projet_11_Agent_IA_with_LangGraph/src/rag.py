@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 import warnings
 from dotenv import load_dotenv
 
@@ -12,13 +13,32 @@ from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
-#DOSSIER_DOCUMENTS = "data/documents"
-#DOSSIER_CHROMA = "chroma_db"
+# --- RÉSOLUTION DYNAMIQUE DES CHEMINS (Docker vs Streamlit Cloud / Local) ---
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Chemins internes au conteneur Docker (définis par WORKING DIR /app et les volumes)
-DOSSIER_DOCUMENTS = os.getenv("DOCUMENTS_PATH", "/app/data/documents")
-DOSSIER_CHROMA = os.getenv("CHROMA_PATH", "/app/chroma_db")
+# 1. Dossier des PDF (fallback dynamique sur le sous-dossier data/documents du projet)
+DEFAULT_DOCS_PATH = os.path.join(BASE_DIR, "data", "documents")
+DOSSIER_DOCUMENTS = os.getenv("DOCUMENTS_PATH", DEFAULT_DOCS_PATH if os.path.exists(DEFAULT_DOCS_PATH) else "data/documents")
+
+# 2. Dossier ChromaDB :
+# - Si CHROMA_PATH existe (Docker Compose), on l'utilise.
+# - Sinon (Streamlit Cloud), on bascule sur /tmp/chroma_db pour éviter les erreurs de permission SQLite (os error 13).
+if "CHROMA_PATH" in os.environ:
+    DOSSIER_CHROMA = os.environ["CHROMA_PATH"]
+else:
+    DOSSIER_CHROMA = os.path.join(tempfile.gettempdir(), "chroma_db")
+
+# Copie automatique de la base pré-existante du dépôt vers /tmp si disponible
+LOCAL_REPO_CHROMA = os.path.join(BASE_DIR, "chroma_db")
+if not os.path.exists(DOSSIER_CHROMA) and os.path.exists(LOCAL_REPO_CHROMA) and os.listdir(LOCAL_REPO_CHROMA):
+    try:
+        shutil.copytree(LOCAL_REPO_CHROMA, DOSSIER_CHROMA)
+    except Exception:
+        pass
+
+os.makedirs(DOSSIER_CHROMA, exist_ok=True)
 _retriever_cache = None
+
 
 def obtenir_retriever(force_reindex: bool = False):
     global _retriever_cache
@@ -29,7 +49,7 @@ def obtenir_retriever(force_reindex: bool = False):
         model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
 
-    # Si une réindexation forcée est demandée, supprimer l'ancienne base Chroma
+    # Si une réindexation forcée est demandée, supprimer l'ancienne base Chroma dans /tmp
     if force_reindex and os.path.exists(DOSSIER_CHROMA):
         shutil.rmtree(DOSSIER_CHROMA)
 
@@ -40,6 +60,9 @@ def obtenir_retriever(force_reindex: bool = False):
         )
     else:
         print("⚡ Ingestion et vectorisation initiale des PDF...")
+        if not os.path.exists(DOSSIER_DOCUMENTS):
+            os.makedirs(DOSSIER_DOCUMENTS, exist_ok=True)
+
         loader = PyPDFDirectoryLoader(DOSSIER_DOCUMENTS)
         documents = loader.load()
 
