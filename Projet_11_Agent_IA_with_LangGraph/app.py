@@ -10,47 +10,53 @@ import sys
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+
+# Force le répertoire de travail sur le dossier du projet
+os.chdir(PROJECT_DIR)
 # -----------------------------------------------------------
 
 import time
-import subprocess
+import threading
 import requests
+import uvicorn
 import extra_streamlit_components as stx
 
-# --- DÉMARRAGE INTELLIGENT DE FASTAPI (Docker vs Streamlit Cloud) ---
+# --- DÉMARRAGE INTELLIGENT DE FASTAPI (Thread intégré) ---
 @st.cache_resource
 def start_fastapi_backend():
-    """Démarre FastAPI en arrière-plan UNIQUEMENT si on n'est pas dans Docker Compose."""
+    """Démarre FastAPI dans un Thread d'arrière-plan."""
     api_base = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1")
     
-    # Si 'backend' est dans l'URL, Docker Compose gère déjà le conteneur FastAPI séparé
+    # En environnement Docker Compose, le conteneur 'backend' gère déjà FastAPI
     if "backend" in api_base:
         print("🐳 Environnement Docker Compose détecté : utilisation du conteneur 'backend'.")
-        return None
+        return
 
-    print("☁️ Environnement Streamlit Cloud / Standalone : Lancement de FastAPI en arrière-plan...")
-    
-    # Injection explicite de PROJECT_DIR dans le PYTHONPATH du sous-processus
-    env = os.environ.copy()
-    env["PYTHONPATH"] = PROJECT_DIR + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
+    print("☁️ Démarrage du serveur FastAPI en thread intégré...")
 
-    process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8000"],
-        cwd=PROJECT_DIR,
-        env=env
-    )
-    
-    # Health check : attente active que l'API soit opérationnelle
+    def run_server():
+        # Import direct du bon module d'API
+        try:
+            from src.api.main_api import app as fastapi_app
+        except ModuleNotFoundError:
+            from main import app as fastapi_app
+
+        uvicorn.run(fastapi_app, host="127.0.0.1", port=8000, log_level="info")
+
+    # Lancement du serveur dans un thread d'arrière-plan
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+
+    # Attente active (Health Check) que l'API soit opérationnelle
     for _ in range(15):
         try:
             res = requests.get("http://127.0.0.1:8000/docs", timeout=1)
             if res.status_code == 200:
-                print("✅ FastAPI backend prêt sur 127.0.0.1:8000 !")
+                print("✅ FastAPI backend prêt sur http://127.0.0.1:8000 !")
                 break
         except Exception:
             time.sleep(1)
-            
-    return process
+
 
 # Exécution unique du check/démarrage
 start_fastapi_backend()
