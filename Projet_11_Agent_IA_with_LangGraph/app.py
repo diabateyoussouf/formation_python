@@ -5,6 +5,13 @@ st.set_page_config(page_title="Hôtel Belvédère - Meknès", page_icon="🏨", 
 
 import os
 import sys
+
+# --- RÉSOLUTION DU CHEMIN DU PROJET (Pour Streamlit Cloud) ---
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
+# -----------------------------------------------------------
+
 import time
 import subprocess
 import requests
@@ -22,8 +29,10 @@ def start_fastapi_backend():
         return None
 
     print("☁️ Environnement Streamlit Cloud / Standalone : Lancement de FastAPI en arrière-plan...")
+    # Le paramètre cwd=PROJECT_DIR force Uvicorn à s'exécuter depuis le dossier racine du projet
     process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8000"]
+        [sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8000"],
+        cwd=PROJECT_DIR
     )
     
     # Health check : attente active que l'API soit opérationnelle
