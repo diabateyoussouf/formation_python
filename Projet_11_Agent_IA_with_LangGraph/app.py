@@ -29,10 +29,15 @@ def start_fastapi_backend():
         return None
 
     print("☁️ Environnement Streamlit Cloud / Standalone : Lancement de FastAPI en arrière-plan...")
-    # Le paramètre cwd=PROJECT_DIR force Uvicorn à s'exécuter depuis le dossier racine du projet
+    
+    # Injection explicite de PROJECT_DIR dans le PYTHONPATH du sous-processus
+    env = os.environ.copy()
+    env["PYTHONPATH"] = PROJECT_DIR + (os.pathsep + env["PYTHONPATH"] if "PYTHONPATH" in env else "")
+
     process = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8000"],
-        cwd=PROJECT_DIR
+        cwd=PROJECT_DIR,
+        env=env
     )
     
     # Health check : attente active que l'API soit opérationnelle
