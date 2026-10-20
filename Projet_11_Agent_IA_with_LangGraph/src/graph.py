@@ -26,19 +26,19 @@ from .tools import (
 # 1. Initialisation du modèle Mistral
 # ============================================================
 
-
-# ============================================================
-# 1. Initialisation du modèle Mistral
-# ============================================================
-
-# Récupère la clé depuis les variables d'environnement OU les secrets Streamlit
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY") or st.secrets.get("MISTRAL_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+if not MISTRAL_API_KEY:
+    try:
+        MISTRAL_API_KEY = st.secrets.get("MISTRAL_API_KEY")
+    except Exception:
+        MISTRAL_API_KEY = None
 
 llm = ChatMistralAI(
     model="ministral-8b-2512",
     api_key=MISTRAL_API_KEY,
     temperature=0.0
 )
+
 # ============================================================
 # 2. NŒUD : Routeur d'intentions LLM avec Mistral
 # ============================================================
@@ -50,25 +50,25 @@ def analyser_question(state: AgentState):
         SystemMessage(content=(
             "Tu es le classifieur d'intentions officiel de l'Hôtel Le Belvédère à Meknès.\n"
             "Analyse le message du client et réponds STRICTEMENT avec le nom d'une seule catégorie parmi :\n"
-            "- DISPO : demande de disponibilités, chambres libres, catalogue des prix, tarif d'une nuit ou coût par chambre (ex: 'combien coûte une nuit ?', 'quel est le prix d'une chambre ?').\n"
+            "- DISPO : demande de disponibilités, chambres libres, catalogue des prix, tarif d'une nuit ou coût par chambre.\n"
             "- RESERVATION : volonté explicite de réserver ou bloquer une chambre.\n"
             "- MES_RESERVATIONS : consulter ses propres réservations enregistrées ou son dossier.\n"
             "- ANNULATION : volonté d'annuler ou supprimer un séjour.\n"
-            "- CALCUL : UNIQUEMENT pour effectuer la multiplication/devis d'un montant total lorsque le client demande une opération arithmétique explicite (ex: 'combien font 4 nuits à 150 € ?', 'calcule le total pour 3 nuits').\n"
-            "- CHAT : salutations, politesses, vœux d'accueil.\n"
-            "- RAG : questions d'information sur les services de l'hôtel (animaux, chiens, petit-déjeuner, horaires, piscine, parking).\n\n"
-            "CONSIGNE : Réponds UNIQUEMENT le nom de la catégorie (ex: RAG)."
+            "- CALCUL : UNIQUEMENT pour effectuer la multiplication/devis d'un montant total lorsque le client demande une opération arithmétique explicite (ex: 'combien font 4 nuits à 150 € ?').\n"
+            "- CHAT : salutations, présentation du client (ex: 'je m'appelle X'), questions sur l'identité ('comment je m'appelle ?'), ou discussions générales.\n"
+            "- RAG : questions d'information sur les services de l'hôtel (animaux, petit-déjeuner, horaires, piscine, parking).\n\n"
+            "CONSIGNE : Réponds UNIQUEMENT le nom de la catégorie (ex: CHAT)."
         )),
         HumanMessage(content="Puis-je venir avec un petit chien et le petit-déjeuner est-il inclus ?"),
         AIMessage(content="RAG"),
         HumanMessage(content="Avez-vous une chambre disponible pour le mois prochain ?"),
         AIMessage(content="DISPO"),
-        HumanMessage(content="Le prix d'une nuit"),
-        AIMessage(content="DISPO"),
-        HumanMessage(content="une chambre coûte combien par nuit ?"),
-        AIMessage(content="DISPO"),
-        HumanMessage(content="Je souhaite réserver la Suite Royale"),
-        AIMessage(content="RESERVATION"),
+        HumanMessage(content="Je suis Diabaté Youssouf"),
+        AIMessage(content="CHAT"),
+        HumanMessage(content="Comment je m'appelle ?"),
+        AIMessage(content="CHAT"),
+        HumanMessage(content="On peut parler de football ?"),
+        AIMessage(content="CHAT"),
         HumanMessage(content="Combien coûtent 4 nuits à 150 € ?"),
         AIMessage(content="CALCUL"),
         HumanMessage(content=f"Message client : \"{question}\"")
@@ -84,7 +84,7 @@ def analyser_question(state: AgentState):
     valid_intents = {"RAG", "DISPO", "RESERVATION", "MES_RESERVATIONS", "ANNULATION", "CALCUL", "CHAT"}
     
     words = re.findall(r'[A-Z_]+', raw_output)
-    decision = next((word for word in words if word in valid_intents), "RAG")
+    decision = next((word for word in words if word in valid_intents), "CHAT")
 
     print(f"📊 [Routeur Mistral] Raw: '{raw_output}' -> Decision: '{decision}' (Query: '{question}')")
     return {"decision": decision}
@@ -101,7 +101,7 @@ def executer_rag(state: AgentState):
 
 
 # ============================================================
-# 4. NŒUD : CALCUL DE FACTURE (AVEC FALLBACK DYNAMIQUE)
+# 4. NŒUD : CALCUL DE FACTURE
 # ============================================================
 
 def executer_calcul(state: AgentState):
@@ -110,7 +110,6 @@ def executer_calcul(state: AgentState):
     match_nuits = re.search(r"(\d+)\s*nuit", question.lower())
     match_prix = re.search(r"(\d+(?:[.,]\d+)?)\s*€", question.lower())
 
-    # Si aucun prix en € n'est fourni dans la question, basculer intelligemment vers le catalogue DISPO
     if not match_prix:
         resultat_dispo = verifier_disponibilite("")
         return {
@@ -255,23 +254,46 @@ def executer_annulation(state: AgentState):
 
 
 # ============================================================
-# 9. NŒUD : CHAT GÉNÉRAL
+# 9. NŒUD : CHAT GÉNÉRAL (AVEC GARDE-FOU STRICT ET HISTORIQUE)
 # ============================================================
 
 def executer_chat(state: AgentState):
     question = state.get("question") or state.get("message") or ""
     user_email = state.get("user_email")
+    status_str = f"Client connecté ({user_email})" if user_email else "Client non connecté."
 
-    status_str = f"Client connecté : {user_email}" if user_email else "Client non connecté."
+    # Prompt Système avec règles strictes de périmètre et de mémoire
+    system_prompt = SystemMessage(content=f"""Tu es l'assistant de réception officiel de l'Hôtel Le Belvédère à Meknès.
+Statut actuel : {status_str}
 
-    prompt = f"""Tu es l'assistant de réception de l'Hôtel Le Belvédère à Meknès.
-Réponds de manière chaleureuse, professionnelle et concise au client.
+============================================================
+1. PERIMÈTRE STRICT D'INTERVENTION (GARDE-FOU)
+============================================================
+- Tu réponds EXCLUSIVEMENT aux sujets liés à l'Hôtel Le Belvédère (accueil, réservations, séjours, disponibilités, équipements, identité du client).
+- Si le client pose une question HORS-SUJET sans rapport avec l'hôtel (ex: football, sport, politique, météo générale, sujets généraux), tu dois IMPÉRATIVEMENT REFUSER POLIMENT et réorienter vers l'hôtel.
+- Exemple de refus obligatoire :
+  "Je suis l'assistant dédié à l'Hôtel Le Belvédère. Je ne peux répondre qu'aux questions concernant notre établissement et vos séjours. Comment puis-je vous aider aujourd'hui ?"
 
-Contexte client : {status_str}
-Message du client : "{question}"
-"""
-    message = HumanMessage(content=prompt)
-    resultat = llm.invoke([message])
+============================================================
+2. MÉMOIRE ET IDENTITÉ DU CLIENT
+============================================================
+- Utilise l'historique de la conversation ci-dessous.
+- Si le client s'est présenté ou a donné son nom (ex: "je suis Diabaté Youssouf" ou "mon nom est Youssouf"), sauvegarde cette information dans le fil de discussion.
+- Si le client demande "Comment je m'appelle ?" ou "Qui suis-je ?", réponds-lui directement et chaleureusement avec son nom (ex: "Vous êtes Monsieur Diabaté Youssouf !").
+- N'invoque PAS de raison de sécurité ou de confidentialité si le client vient lui-même de donner son nom dans la discussion.
+""")
+
+    # Construction du fil de discussion complet pour conserver le contexte
+    messages_payload = [system_prompt]
+
+    # Injection des anciens messages enregistrés dans le State s'ils existent
+    historique = state.get("messages", [])
+    if historique and isinstance(historique, list):
+        messages_payload.extend(historique)
+    else:
+        messages_payload.append(HumanMessage(content=question))
+
+    resultat = llm.invoke(messages_payload)
 
     return {
         "resultat_outil": resultat.content,
@@ -281,7 +303,7 @@ Message du client : "{question}"
 
 
 # ============================================================
-# 10. NŒUD : GÉNÉRATION DE RÉPONSE
+# 10. NŒUD : GÉNÉRATION DE RÉPONSE (RAG)
 # ============================================================
 
 def generer_reponse(state: AgentState):
@@ -295,7 +317,7 @@ def generer_reponse(state: AgentState):
         prompt = f"""Tu es l'assistant officiel de l'Hôtel Le Belvédère à Meknès.
 
 Réponds précisément et de façon courtoise à la question du client en consultant le contexte officiel ci-dessous.
-Si le client souhaite réserver, indique-lui qu'il peut préciser la chambre souhaitée.
+Ne réponds qu'aux questions concernant l'hôtel.
 
 Contexte officiel :
 {contexte}
