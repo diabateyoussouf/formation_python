@@ -3,7 +3,6 @@ import requests
 import extra_streamlit_components as stx
 
 from src.config_frontend import API_AUTH_URL
-#API_AUTH_URL = "http://127.0.0.1:8005/api/v1/auth"
 
 
 def get_initials(name: str) -> str:
@@ -58,8 +57,8 @@ def render_header():
         initiales = "🔑"
         role_raw = "client"
 
-    # --- 2. DISPOSITION DE LA BARRE SUPÉRIEURE ---
-    col_search, col_bell, col_theme, col_user = st.columns([4, 0.4, 0.4, 1.8], vertical_alignment="center")
+    # --- 2. DISPOSITION DE LA BARRE SUPÉRIEURE (COLONNES OPTIMISÉES) ---
+    col_search, col_bell, col_theme, col_user = st.columns([3.5, 0.5, 0.5, 2.0], vertical_alignment="center")
 
     # Barre de recherche universelle
     with col_search:
@@ -74,20 +73,24 @@ def render_header():
             st.session_state["current_page"] = "Accueil"
             st.rerun()
 
-    # Cloche de notification (Badge 3)
+    # Cloche de notification (Badge 3) - DIMENSIONS FIXES 36x36px
     with col_bell:
         st.markdown("""
-            <div style="position: relative; background: #131b2e; border: 1px solid #1f2c40; padding: 8px 10px; border-radius: 50%; text-align: center; cursor: pointer;">
-                🔔
-                <span style="position: absolute; top: -3px; right: -3px; background: #ff2a75; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 0.65rem; display: flex; align-items: center; justify-content: center; font-weight: bold;">3</span>
+            <div style="display: flex; justify-content: center; align-items: center;">
+                <div style="position: relative; background: #131b2e; border: 1px solid #1f2c40; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;">
+                    🔔
+                    <span style="position: absolute; top: -2px; right: -2px; background: #ff2a75; color: white; border-radius: 50%; width: 16px; height: 16px; font-size: 0.65rem; display: flex; align-items: center; justify-content: center; font-weight: bold;">3</span>
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
-    # Switch Mode Sombre
+    # Switch Mode Sombre - DIMENSIONS FIXES 36x36px
     with col_theme:
         st.markdown("""
-            <div style="background: #131b2e; border: 1px solid #1f2c40; padding: 8px 10px; border-radius: 50%; text-align: center; cursor: pointer;">
-                🌙
+            <div style="display: flex; justify-content: center; align-items: center;">
+                <div style="background: #131b2e; border: 1px solid #1f2c40; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;">
+                    🌙
+                </div>
             </div>
         """, unsafe_allow_html=True)
 

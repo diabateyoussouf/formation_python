@@ -1,7 +1,12 @@
 import streamlit as st
 
 # 1. Configuration de la page Streamlit (OBLIGATOIREMENT EN PREMIER)
-st.set_page_config(page_title="Hôtel Belvédère - Meknès", page_icon="🏨", layout="wide")
+st.set_page_config(
+    page_title="Hôtel Belvédère - Meknès", 
+    page_icon="🏨", 
+    layout="wide",
+    initial_sidebar_state="auto"  # S'ouvre sur grand écran, se réduit en bouton sur mobile
+)
 
 import os
 import sys

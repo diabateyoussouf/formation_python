@@ -12,12 +12,27 @@ def load_custom_css():
         font-family: 'Inter', sans-serif;
     }
 
-    /* Masquer le header natif Streamlit */
-    header, #MainMenu, footer { 
+    /* Masquer le menu natif Streamlit et le footer, sans masquer le bouton de la sidebar */
+    #MainMenu, footer, [data-testid="stHeader"] { 
         visibility: hidden !important; 
-        display: none !important; 
+        background: transparent !important;
     }
-    
+
+    /* --- RE-FORCER LE BOUTON SIDEBAR (BOUTON HAMBURGER >) --- */
+    [data-testid="collapsedControl"] {
+        visibility: visible !important;
+        display: flex !important;
+        position: fixed !important;
+        top: 10px !important;
+        left: 10px !important;
+        z-index: 1000000 !important;
+        background-color: #131b2e !important;
+        border: 1px solid #1f2c40 !important;
+        border-radius: 8px !important;
+        color: #ffffff !important;
+        padding: 4px !important;
+    }
+
     /* Marge supérieure pour que le contenu ne glisse pas SOUS le header fixe */
     .block-container {
         padding-top: 5.5rem !important;
@@ -46,10 +61,44 @@ def load_custom_css():
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.8) !important;
     }
 
-    /* Ajustement responsive si la sidebar est réduite/masquée */
+    /* --- CORRECTION RESPONSIVE MOBILE (< 992px et < 768px) --- */
     @media (max-width: 992px) {
         div[data-testid="stHorizontalBlock"]:has(input[key="header_search_input"]) {
             left: 0 !important;
+            padding-left: 3.5rem !important; /* Laisse la place au bouton hamburger à gauche */
+        }
+    }
+
+    @media (max-width: 768px) {
+        /* Empêcher les colonnes du header de s'empiler et d'étirer les icônes */
+        div[data-testid="stHorizontalBlock"]:has(input[key="header_search_input"]) {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 8px 10px 8px 3.2rem !important;
+        }
+
+        /* Garder les éléments du header sur une seule ligne */
+        div[data-testid="stHorizontalBlock"]:has(input[key="header_search_input"]) > div[data-testid="stColumn"] {
+            width: auto !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+        }
+
+        /* Empêcher la déformation des boutons (cloche, lune, profil) */
+        div[data-testid="stHorizontalBlock"]:has(input[key="header_search_input"]) button {
+            max-height: 38px !important;
+            padding: 4px 8px !important;
+            border-radius: 20px !important;
+        }
+
+        /* Marge adaptée pour le contenu sous le header sur mobile */
+        .block-container {
+            padding-top: 6.5rem !important;
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
         }
     }
 
