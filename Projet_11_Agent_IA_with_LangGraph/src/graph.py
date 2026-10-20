@@ -40,39 +40,35 @@ llm = ChatMistralAI(
 )
 
 # ============================================================
-# 2. NŒUD : Routeur d'intentions LLM avec Mistral
+# 2. NŒUD : Routeur d'intentions contextualisé
 # ============================================================
 
 def analyser_question(state: AgentState):
     question = (state.get("question") or state.get("message") or "").strip()
 
-    messages = [
-        SystemMessage(content=(
-            "Tu es le classifieur d'intentions officiel de l'Hôtel Le Belvédère à Meknès.\n"
-            "Analyse le message du client et réponds STRICTEMENT avec le nom d'une seule catégorie parmi :\n"
-            "- DISPO : demande de disponibilités, chambres libres, catalogue des prix, tarif d'une nuit ou coût par chambre.\n"
-            "- RESERVATION : volonté explicite de réserver ou bloquer une chambre.\n"
-            "- MES_RESERVATIONS : consulter ses propres réservations enregistrées ou son dossier.\n"
-            "- ANNULATION : volonté d'annuler ou supprimer un séjour.\n"
-            "- CALCUL : UNIQUEMENT pour effectuer la multiplication/devis d'un montant total lorsque le client demande une opération arithmétique explicite.\n"
-            "- CHAT : salutations, présentation du client (ex: 'je m'appelle X'), questions sur l'identité ('comment je m'appelle ?'), ou discussions générales.\n"
-            "- RAG : questions d'information sur les services de l'hôtel (animaux, petit-déjeuner, horaires, piscine, parking).\n\n"
-            "CONSIGNE : Réponds UNIQUEMENT le nom de la catégorie (ex: CHAT)."
-        )),
-        HumanMessage(content="Puis-je venir avec un petit chien et le petit-déjeuner est-il inclus ?"),
-        AIMessage(content="RAG"),
-        HumanMessage(content="Avez-vous une chambre disponible pour le mois prochain ?"),
-        AIMessage(content="DISPO"),
-        HumanMessage(content="Je suis Diabaté Youssouf"),
-        AIMessage(content="CHAT"),
-        HumanMessage(content="Comment je m'appelle ?"),
-        AIMessage(content="CHAT"),
-        HumanMessage(content="On peut parler de football ?"),
-        AIMessage(content="CHAT"),
-        HumanMessage(content="Combien coûtent 4 nuits à 150 € ?"),
-        AIMessage(content="CALCUL"),
-        HumanMessage(content=f"Message client : \"{question}\"")
-    ]
+    system_prompt = SystemMessage(content=(
+        "Tu es le classifieur d'intentions de l'Hôtel Le Belvédère à Meknès.\n"
+        "Analyse le dernier message du client EN TENANT COMPTE de l'historique de la conversation.\n\n"
+        "Réponds STRICTEMENT avec l'un des mots suivants :\n"
+        "- DISPO : si le client demande les chambres libres, les prix, les tarifs, OU S'IL FOURNIT SES DATES/PRÉCISIONS suite à une question sur les disponibilités.\n"
+        "- RESERVATION : si le client dit 'je veux réserver', 'je prends', 'réservez-moi', 'je veux une [nom de chambre]'.\n"
+        "- MES_RESERVATIONS : consultation du dossier ou des réservations existantes.\n"
+        "- ANNULATION : volonté EXPLICITE d'annuler ou supprimer une réservation.\n"
+        "- CALCUL : calcul d'un montant arithmétique explicite (ex: 3 x 150 €).\n"
+        "- CHAT : salutations simples sans demande de chambre ('bonjour', 'comment allez-vous'), présentations ('je m'appelle X'), questions sur l'identité ('qui suis-je ?') ou sujets hors-hôtel.\n"
+        "- RAG : questions sur les services (animaux, parking, piscine, petit-déjeuner, horaire).\n\n"
+        "RÈGLE D'OR : Si le message contient à la fois une salutation ET une demande de chambre/prix, choisis DISPO ou RESERVATION, PAS CHAT !\n"
+        "Réponds uniquement le mot-clé (ex: DISPO)."
+    ))
+
+    # Construction du contexte pour que le routeur comprenne les suites de discussion
+    messages = [system_prompt]
+    historique = state.get("messages", [])
+    if historique and isinstance(historique, list):
+        messages.extend(historique)
+    
+    if not historique or (historique and getattr(historique[-1], "content", "") != question):
+        messages.append(HumanMessage(content=f"Message client : \"{question}\""))
 
     try:
         resultat = llm.invoke(messages)
@@ -82,9 +78,8 @@ def analyser_question(state: AgentState):
         raw_output = ""
 
     valid_intents = {"RAG", "DISPO", "RESERVATION", "MES_RESERVATIONS", "ANNULATION", "CALCUL", "CHAT"}
-    
     words = re.findall(r'[A-Z_]+', raw_output)
-    decision = next((word for word in words if word in valid_intents), "CHAT")
+    decision = next((word for word in words if word in valid_intents), "DISPO")
 
     print(f"📊 [Routeur Mistral] Raw: '{raw_output}' -> Decision: '{decision}' (Query: '{question}')")
     return {"decision": decision}
@@ -152,9 +147,13 @@ def executer_disponibilite(state: AgentState):
 
     if not nom_chambre:
         termes_specifiques = {
+            "patio": "Chambre Supérieure Vue Patio",
+            "piscine": "Chambre Deluxe Vue Piscine",
             "jardin": "Suite Royale Vue Jardin",
             "panorama": "Vue Panaroma",
-            "panaroma": "Vue Panaroma"
+            "panaroma": "Vue Panaroma",
+            "atlas": "Suite Executive Atlas",
+            "medina": "Suite Familiale Médina"
         }
         for terme, nom_associe in termes_specifiques.items():
             if terme in question:
@@ -186,23 +185,23 @@ def executer_creation_reservation(state: AgentState):
         db.close()
 
     chambre_cible = ""
-
     for nom in noms_chambres:
         if nom.lower() in q_lower:
             chambre_cible = nom
             break
 
     if not chambre_cible:
-        if "panorama" in q_lower or "panaroma" in q_lower:
-            for nom in noms_chambres:
-                if "pan" in nom.lower():
-                    chambre_cible = nom
-                    break
-        elif "jardin" in q_lower or "suite" in q_lower or "royale" in q_lower:
-            for nom in noms_chambres:
-                if "jardin" in nom.lower() or "suite" in nom.lower():
-                    chambre_cible = nom
-                    break
+        termes = {
+            "patio": "Chambre Supérieure Vue Patio",
+            "piscine": "Chambre Deluxe Vue Piscine",
+            "jardin": "Suite Royale Vue Jardin",
+            "panorama": "Vue Panaroma",
+            "atlas": "Suite Executive Atlas"
+        }
+        for key, val in termes.items():
+            if key in q_lower:
+                chambre_cible = val
+                break
 
     if not chambre_cible and noms_chambres:
         chambre_cible = noms_chambres[0]
@@ -254,7 +253,7 @@ def executer_annulation(state: AgentState):
 
 
 # ============================================================
-# 9. NŒUD : CHAT GÉNÉRAL (RÉCURRENCE & SÉCURITÉ DE NOM)
+# 9. NŒUD : CHAT GÉNÉRAL
 # ============================================================
 
 def executer_chat(state: AgentState):
@@ -265,25 +264,16 @@ def executer_chat(state: AgentState):
     system_prompt = SystemMessage(content=f"""Tu es l'assistant de réception officiel de l'Hôtel Le Belvédère à Meknès.
 Statut actuel : {status_str}
 
-============================================================
-1. MÉMOIRE ET IDENTITÉ CLIENT
-============================================================
-- Analyse attentivement l'historique de la conversation.
-- Si le client a donné son nom (ex: "je suis Diabaté Youssouf" ou "Youssouf"), tu le connais.
-- Quand il demande "comment je m'appelle ?", réponds directement : "Vous êtes Monsieur Diabaté Youssouf !"
-- INTERDICTION STRICTE de générer des textes de remplacement comme [Nom du client], [insérer ici le nom] ou [nom].
-- Si le nom n'a JAMAIS été mentionné dans l'historique, dis simplement : "Vous ne me l'avez pas encore indiqué ! Comment vous appelez-vous ?"
+1. MÉMOIRE ET IDENTITÉ CLIENT :
+- Utilise l'historique de la discussion.
+- Si le client a donné son nom (ex: "je suis Diabaté Youssouf"), salue-le poliment avec son nom.
+- Ne génère AUCUN crochet comme [Nom du client].
 
-============================================================
-2. GARDE-FOU STRICT
-============================================================
-- Réponds UNIQUEMENT aux sujets liés à l'Hôtel Le Belvédère.
-- Si la question est hors-sujet (football, musique, sport, politique, etc.), réponds :
-  "Je suis l'assistant dédié à l'Hôtel Le Belvédère. Je ne peux répondre qu'aux questions concernant notre établissement et vos séjours. Comment puis-je vous aider aujourd'hui ?"
-""")
+2. GARDE-FOU STRICT :
+- Réponds UNIQUEMENT aux questions sur l'hôtel.
+- Refuse poliment tout sujet hors-hôtel (sports, musique, politique).""")
 
     messages_payload = [system_prompt]
-
     historique = state.get("messages", [])
     if historique and isinstance(historique, list):
         messages_payload.extend(historique)
@@ -301,12 +291,17 @@ Statut actuel : {status_str}
 
 
 # ============================================================
-# 10. NŒUD : GÉNÉRATION DE RÉPONSE PERSONNALISÉE ET CHALEUREUSE
+# 10. NŒUD : GÉNÉRATION DE RÉPONSE FIABILISÉE (SANS HALLUCINATIONS)
 # ============================================================
 
 def generer_reponse(state: AgentState):
     question = state.get("question") or state.get("message") or ""
     decision = state["decision"]
+
+    # Pour les outils métiers (RESERVATION, ANNULATION, MES_RESERVATIONS, CALCUL), 
+    # on renvoie directement le résultat exact généré par la base de données/l'outil
+    if decision in ["RESERVATION", "ANNULATION", "MES_RESERVATIONS", "CALCUL"]:
+        return {"reponse": state.get("resultat_outil", "")}
 
     if decision == "CHAT":
         return {"reponse": state.get("resultat_outil", "")}
@@ -315,21 +310,20 @@ def generer_reponse(state: AgentState):
     resultat_outil = state.get("resultat_outil", "")
     donnees = contexte if decision == "RAG" else resultat_outil
 
-    system_prompt = SystemMessage(content="""Tu es la réceptionniste virtuelle chaleureuse et élégante de l'Hôtel Le Belvédère à Meknès.
+    system_prompt = SystemMessage(content="""Tu es la réceptionniste virtuelle de l'Hôtel Le Belvédère.
 
-CONSIGNES :
-1. Reformule les données brutes de l'hôtel fournies ci-dessous de manière polie, naturelle et accueillante.
-2. Si le client s'est présenté dans la conversation (ex: M. Diabaté Youssouf), adresse-toi à lui par son nom (ex: "Oui Monsieur Diabaté, voici nos chambres disponibles :").
-3. Conserve TOUTES les données réelles (nom des chambres, stock, tarifs en euro, numéros de réservation).
-4. Ne génère JAMAIS de crochets comme [Nom du client].""")
+CONSIGNES STRICTES :
+1. Salue le client chaleureusement en utilisant son prénom/nom s'il l'a donné dans la discussion.
+2. Présente les données ci-dessous de manière élégante et polie.
+3. INTERDICTION STRICTE de modifier la liste des chambres, d'inventer des types de chambres non cités ou de changer les stocks et tarifs.
+4. N'utilise JAMAIS de texte de remplacement avec des crochets.""")
 
     messages_payload = [system_prompt]
-
     historique = state.get("messages", [])
     if historique and isinstance(historique, list):
         messages_payload.extend(historique)
 
-    prompt_final = f"Message client : \"{question}\"\n\nDonnées brutes de l'hôtel :\n{donnees}"
+    prompt_final = f"Message du client : \"{question}\"\n\nDonnées exactes de l'hôtel :\n{donnees}"
     messages_payload.append(HumanMessage(content=prompt_final))
 
     try:
