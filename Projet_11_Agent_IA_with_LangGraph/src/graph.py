@@ -40,6 +40,49 @@ llm = ChatMistralAI(
 )
 
 # ============================================================
+# UTILS : RECHERCHE DYNAMIQUE DE CHAMBRE DEPUIS LA BDD
+# ============================================================
+
+def trouver_chambre_depuis_db(question: str, chambres_bdd: list) -> str:
+    """Recherche une chambre en BDD de manière 100% dynamique (sans dictionnaire ni stop-words statiques)."""
+    if not chambres_bdd or not question:
+        return ""
+
+    q_clean = question.lower()
+
+    # 1. Recherche directe : nom complet de la chambre présent dans la question
+    for c in chambres_bdd:
+        if c.nom.lower() in q_clean:
+            return c.nom
+
+    # 2. Détection dynamique des mots fréquents depuis la BDD (ex: "Chambre", "Suite", "Vue")
+    total_chambres = len(chambres_bdd)
+    frequence_mots = {}
+    for c in chambres_bdd:
+        for mot in set(c.nom.lower().split()):
+            frequence_mots[mot] = frequence_mots.get(mot, 0) + 1
+
+    # Un mot est jugé 'commun' s'il apparaît dans plus de 50% des catégories en BDD
+    mots_communs_bdd = {mot for mot, count in frequence_mots.items() if count > (total_chambres / 2)}
+
+    # 3. Comparaison avec les mots distinctifs spécifiques
+    meilleure_chambre = ""
+    meilleur_score = 0
+
+    for c in chambres_bdd:
+        mots_specifiques = [m for m in c.nom.lower().split() if m not in mots_communs_bdd]
+        
+        # Test direct : présence du mot spécifique dans le message client
+        score = sum(1 for mot in mots_specifiques if mot in q_clean)
+
+        if score > meilleur_score:
+            meilleur_score = score
+            meilleure_chambre = c.nom
+
+    return meilleure_chambre
+
+
+# ============================================================
 # 2. NŒUD : Routeur d'intentions contextualisé
 # ============================================================
 
@@ -48,20 +91,18 @@ def analyser_question(state: AgentState):
 
     system_prompt = SystemMessage(content=(
         "Tu es le classifieur d'intentions de l'Hôtel Le Belvédère à Meknès.\n"
-        "Analyse le dernier message du client EN TENANT COMPTE de l'historique de la conversation.\n\n"
-        "Réponds STRICTEMENT avec l'un des mots suivants :\n"
-        "- DISPO : si le client demande les chambres libres, les prix, les tarifs, OU S'IL FOURNIT SES DATES/PRÉCISIONS suite à une question sur les disponibilités.\n"
-        "- RESERVATION : si le client dit 'je veux réserver', 'je prends', 'réservez-moi', 'je veux une [nom de chambre]'.\n"
-        "- MES_RESERVATIONS : consultation du dossier ou des réservations existantes.\n"
-        "- ANNULATION : volonté EXPLICITE d'annuler ou supprimer une réservation.\n"
-        "- CALCUL : calcul d'un montant arithmétique explicite (ex: 3 x 150 €).\n"
-        "- CHAT : salutations simples sans demande de chambre ('bonjour', 'comment allez-vous'), présentations ('je m'appelle X'), questions sur l'identité ('qui suis-je ?') ou sujets hors-hôtel.\n"
-        "- RAG : questions sur les services (animaux, parking, piscine, petit-déjeuner, horaire).\n\n"
-        "RÈGLE D'OR : Si le message contient à la fois une salutation ET une demande de chambre/prix, choisis DISPO ou RESERVATION, PAS CHAT !\n"
-        "Réponds uniquement le mot-clé (ex: DISPO)."
+        "Analyse le dernier message du client EN TENANT COMPTE de l'historique.\n\n"
+        "RÈGLES STRICTES DE CLASSIFICATION :\n"
+        "- DISPO : si le client demande les disponibilités, le catalogue, les prix, OU s'il demande à réserver SANS NOMMER de chambre spécifique.\n"
+        "- RESERVATION : UNIQUEMENT si le client exprime la volonté de réserver EN NOMMANT une catégorie de chambre.\n"
+        "- MES_RESERVATIONS : consultation des réservations existantes du client.\n"
+        "- ANNULATION : volonté d'annuler ou supprimer une réservation.\n"
+        "- CALCUL : devis arithmétique explicite (ex: 3 x 150 €).\n"
+        "- CHAT : salutations simples, présentations ('je suis Youssouf'), questions d'identité ('comment je m'appelle ?') ou sujets hors-hôtel.\n"
+        "- RAG : questions sur les services de l'hôtel (animaux, parking, piscine, petit-déjeuner).\n\n"
+        "Réponds UNIQUEMENT par le mot-clé (ex: DISPO)."
     ))
 
-    # Construction du contexte pour que le routeur comprenne les suites de discussion
     messages = [system_prompt]
     historique = state.get("messages", [])
     if historique and isinstance(historique, list):
@@ -126,39 +167,18 @@ def executer_calcul(state: AgentState):
 
 
 # ============================================================
-# 5. NŒUD : DISPONIBILITÉ ET TARIFS
+# 5. NŒUD : DISPONIBILITÉ ET TARIFS (100% DYNAMIQUE BDD)
 # ============================================================
 
 def executer_disponibilite(state: AgentState):
-    question = (state.get("question") or state.get("message") or "").lower()
+    question = (state.get("question") or state.get("message") or "").strip()
 
     db = SessionLocal()
     try:
         chambres_bdd = db.query(ChambreModel).all()
-        noms_chambres = [c.nom for c in chambres_bdd]
+        nom_chambre = trouver_chambre_depuis_db(question, chambres_bdd)
     finally:
         db.close()
-
-    nom_chambre = ""
-    for nom in noms_chambres:
-        if nom.lower() in question:
-            nom_chambre = nom
-            break
-
-    if not nom_chambre:
-        termes_specifiques = {
-            "patio": "Chambre Supérieure Vue Patio",
-            "piscine": "Chambre Deluxe Vue Piscine",
-            "jardin": "Suite Royale Vue Jardin",
-            "panorama": "Vue Panaroma",
-            "panaroma": "Vue Panaroma",
-            "atlas": "Suite Executive Atlas",
-            "medina": "Suite Familiale Médina"
-        }
-        for terme, nom_associe in termes_specifiques.items():
-            if terme in question:
-                nom_chambre = nom_associe
-                break
 
     resultat = verifier_disponibilite(nom_chambre)
 
@@ -169,42 +189,33 @@ def executer_disponibilite(state: AgentState):
 
 
 # ============================================================
-# 6. NŒUD : CRÉATION DE RÉSERVATION
+# 6. NŒUD : CRÉATION DE RÉSERVATION (100% DYNAMIQUE BDD)
 # ============================================================
 
 def executer_creation_reservation(state: AgentState):
     question = state.get("question") or state.get("message") or ""
     user_email = state.get("user_email")
-    q_lower = question.lower()
 
     db = SessionLocal()
     try:
         chambres_bdd = db.query(ChambreModel).all()
-        noms_chambres = [c.nom for c in chambres_bdd]
+        chambre_cible = trouver_chambre_depuis_db(question, chambres_bdd)
     finally:
         db.close()
 
-    chambre_cible = ""
-    for nom in noms_chambres:
-        if nom.lower() in q_lower:
-            chambre_cible = nom
-            break
-
+    # Si aucune chambre de la BDD n'a été spécifiée dans le message
     if not chambre_cible:
-        termes = {
-            "patio": "Chambre Supérieure Vue Patio",
-            "piscine": "Chambre Deluxe Vue Piscine",
-            "jardin": "Suite Royale Vue Jardin",
-            "panorama": "Vue Panaroma",
-            "atlas": "Suite Executive Atlas"
+        catalogue = verifier_disponibilite("")
+        msg_demande = (
+            "Pour effectuer votre réservation, veuillez me préciser la chambre souhaitée.\n\n"
+            f"{catalogue}\n\n"
+            "👉 *Dites par exemple : « Je souhaite réserver la Chambre Deluxe Vue Piscine »*"
+        )
+        return {
+            "resultat_outil": msg_demande,
+            "reponse": msg_demande,
+            "decision": "DISPO"
         }
-        for key, val in termes.items():
-            if key in q_lower:
-                chambre_cible = val
-                break
-
-    if not chambre_cible and noms_chambres:
-        chambre_cible = noms_chambres[0]
 
     resultat = creer_reservation(type_chambre=chambre_cible, user_email=user_email)
 
@@ -291,15 +302,13 @@ Statut actuel : {status_str}
 
 
 # ============================================================
-# 10. NŒUD : GÉNÉRATION DE RÉPONSE FIABILISÉE (SANS HALLUCINATIONS)
+# 10. NŒUD : GÉNÉRATION DE RÉPONSE FIABILISÉE
 # ============================================================
 
 def generer_reponse(state: AgentState):
     question = state.get("question") or state.get("message") or ""
     decision = state["decision"]
 
-    # Pour les outils métiers (RESERVATION, ANNULATION, MES_RESERVATIONS, CALCUL), 
-    # on renvoie directement le résultat exact généré par la base de données/l'outil
     if decision in ["RESERVATION", "ANNULATION", "MES_RESERVATIONS", "CALCUL"]:
         return {"reponse": state.get("resultat_outil", "")}
 
