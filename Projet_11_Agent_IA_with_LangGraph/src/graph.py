@@ -54,7 +54,7 @@ def analyser_question(state: AgentState):
             "- RESERVATION : volonté explicite de réserver ou bloquer une chambre.\n"
             "- MES_RESERVATIONS : consulter ses propres réservations enregistrées ou son dossier.\n"
             "- ANNULATION : volonté d'annuler ou supprimer un séjour.\n"
-            "- CALCUL : UNIQUEMENT pour effectuer la multiplication/devis d'un montant total lorsque le client demande une opération arithmétique explicite (ex: 'combien font 4 nuits à 150 € ?').\n"
+            "- CALCUL : UNIQUEMENT pour effectuer la multiplication/devis d'un montant total lorsque le client demande une opération arithmétique explicite.\n"
             "- CHAT : salutations, présentation du client (ex: 'je m'appelle X'), questions sur l'identité ('comment je m'appelle ?'), ou discussions générales.\n"
             "- RAG : questions d'information sur les services de l'hôtel (animaux, petit-déjeuner, horaires, piscine, parking).\n\n"
             "CONSIGNE : Réponds UNIQUEMENT le nom de la catégorie (ex: CHAT)."
@@ -254,7 +254,7 @@ def executer_annulation(state: AgentState):
 
 
 # ============================================================
-# 9. NŒUD : CHAT GÉNÉRAL (AVEC GARDE-FOU STRICT ET HISTORIQUE)
+# 9. NŒUD : CHAT GÉNÉRAL (RÉCURRENCE & SÉCURITÉ DE NOM)
 # ============================================================
 
 def executer_chat(state: AgentState):
@@ -262,35 +262,33 @@ def executer_chat(state: AgentState):
     user_email = state.get("user_email")
     status_str = f"Client connecté ({user_email})" if user_email else "Client non connecté."
 
-    # Prompt Système avec règles strictes de périmètre et de mémoire
     system_prompt = SystemMessage(content=f"""Tu es l'assistant de réception officiel de l'Hôtel Le Belvédère à Meknès.
 Statut actuel : {status_str}
 
 ============================================================
-1. PERIMÈTRE STRICT D'INTERVENTION (GARDE-FOU)
+1. MÉMOIRE ET IDENTITÉ CLIENT
 ============================================================
-- Tu réponds EXCLUSIVEMENT aux sujets liés à l'Hôtel Le Belvédère (accueil, réservations, séjours, disponibilités, équipements, identité du client).
-- Si le client pose une question HORS-SUJET sans rapport avec l'hôtel (ex: football, sport, politique, météo générale, sujets généraux), tu dois IMPÉRATIVEMENT REFUSER POLIMENT et réorienter vers l'hôtel.
-- Exemple de refus obligatoire :
-  "Je suis l'assistant dédié à l'Hôtel Le Belvédère. Je ne peux répondre qu'aux questions concernant notre établissement et vos séjours. Comment puis-je vous aider aujourd'hui ?"
+- Analyse attentivement l'historique de la conversation.
+- Si le client a donné son nom (ex: "je suis Diabaté Youssouf" ou "Youssouf"), tu le connais.
+- Quand il demande "comment je m'appelle ?", réponds directement : "Vous êtes Monsieur Diabaté Youssouf !"
+- INTERDICTION STRICTE de générer des textes de remplacement comme [Nom du client], [insérer ici le nom] ou [nom].
+- Si le nom n'a JAMAIS été mentionné dans l'historique, dis simplement : "Vous ne me l'avez pas encore indiqué ! Comment vous appelez-vous ?"
 
 ============================================================
-2. MÉMOIRE ET IDENTITÉ DU CLIENT
+2. GARDE-FOU STRICT
 ============================================================
-- Utilise l'historique de la conversation ci-dessous.
-- Si le client s'est présenté ou a donné son nom (ex: "je suis Diabaté Youssouf" ou "mon nom est Youssouf"), sauvegarde cette information dans le fil de discussion.
-- Si le client demande "Comment je m'appelle ?" ou "Qui suis-je ?", réponds-lui directement et chaleureusement avec son nom (ex: "Vous êtes Monsieur Diabaté Youssouf !").
-- N'invoque PAS de raison de sécurité ou de confidentialité si le client vient lui-même de donner son nom dans la discussion.
+- Réponds UNIQUEMENT aux sujets liés à l'Hôtel Le Belvédère.
+- Si la question est hors-sujet (football, musique, sport, politique, etc.), réponds :
+  "Je suis l'assistant dédié à l'Hôtel Le Belvédère. Je ne peux répondre qu'aux questions concernant notre établissement et vos séjours. Comment puis-je vous aider aujourd'hui ?"
 """)
 
-    # Construction du fil de discussion complet pour conserver le contexte
     messages_payload = [system_prompt]
 
-    # Injection des anciens messages enregistrés dans le State s'ils existent
     historique = state.get("messages", [])
     if historique and isinstance(historique, list):
         messages_payload.extend(historique)
-    else:
+
+    if not historique or (historique and getattr(historique[-1], "content", "") != question):
         messages_payload.append(HumanMessage(content=question))
 
     resultat = llm.invoke(messages_payload)
@@ -303,33 +301,41 @@ Statut actuel : {status_str}
 
 
 # ============================================================
-# 10. NŒUD : GÉNÉRATION DE RÉPONSE (RAG)
+# 10. NŒUD : GÉNÉRATION DE RÉPONSE PERSONNALISÉE ET CHALEUREUSE
 # ============================================================
 
 def generer_reponse(state: AgentState):
     question = state.get("question") or state.get("message") or ""
     decision = state["decision"]
 
+    if decision == "CHAT":
+        return {"reponse": state.get("resultat_outil", "")}
+
     contexte = state.get("contexte", "")
     resultat_outil = state.get("resultat_outil", "")
+    donnees = contexte if decision == "RAG" else resultat_outil
 
-    if decision == "RAG":
-        prompt = f"""Tu es l'assistant officiel de l'Hôtel Le Belvédère à Meknès.
+    system_prompt = SystemMessage(content="""Tu es la réceptionniste virtuelle chaleureuse et élégante de l'Hôtel Le Belvédère à Meknès.
 
-Réponds précisément et de façon courtoise à la question du client en consultant le contexte officiel ci-dessous.
-Ne réponds qu'aux questions concernant l'hôtel.
+CONSIGNES :
+1. Reformule les données brutes de l'hôtel fournies ci-dessous de manière polie, naturelle et accueillante.
+2. Si le client s'est présenté dans la conversation (ex: M. Diabaté Youssouf), adresse-toi à lui par son nom (ex: "Oui Monsieur Diabaté, voici nos chambres disponibles :").
+3. Conserve TOUTES les données réelles (nom des chambres, stock, tarifs en euro, numéros de réservation).
+4. Ne génère JAMAIS de crochets comme [Nom du client].""")
 
-Contexte officiel :
-{contexte}
+    messages_payload = [system_prompt]
 
-Question du client :
-{question}
-"""
-        message = HumanMessage(content=prompt)
-        resultat = llm.invoke([message])
+    historique = state.get("messages", [])
+    if historique and isinstance(historique, list):
+        messages_payload.extend(historique)
 
+    prompt_final = f"Message client : \"{question}\"\n\nDonnées brutes de l'hôtel :\n{donnees}"
+    messages_payload.append(HumanMessage(content=prompt_final))
+
+    try:
+        resultat = llm.invoke(messages_payload)
         return {"reponse": resultat.content}
-    else:
+    except Exception:
         return {"reponse": resultat_outil}
 
 
